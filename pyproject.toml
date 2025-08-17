@@ -22,6 +22,8 @@ pre-commit = "^4.2.0"
 
 [tool.poetry.group.test.dependencies]
 pytest = "^8.3.5"
+pytest-cov = "^6.2.1"
+pytest-asyncio = "^1.1.0"
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
@@ -118,6 +120,7 @@ max-complexity = 10
 [tool.ruff.lint.extend-per-file-ignores]
 "test_*.py" = [
     "S101",
+    "PLR2004",
 ]
 
 [tool.mypy]
@@ -129,3 +132,7 @@ files = [
     "src",
     "tests",
 ]
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disable_error_code = "var-annotated"
