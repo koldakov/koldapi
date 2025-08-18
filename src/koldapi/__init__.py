@@ -1,4 +1,5 @@
 from ._types import Scope
+from .configs import Config
 from .datastructures import (
     Headers,
     Method,
@@ -7,6 +8,7 @@ from .datastructures import (
 )
 
 __all__ = [
+    "Config",
     "Headers",
     "Method",
     "Scope",
