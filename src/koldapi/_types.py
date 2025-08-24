@@ -13,6 +13,8 @@ This module defines core type aliases and abstractions for an ASGI-like framewor
 
 - `Send`: An awaitable callable used to send messages to the server or client.
 
+- `ASGIApp`: Anything that accepts `Scope`, `Receive` and `Send`.
+
 - `StatelessLifespan`: A callable that receives an application instance and
   returns an asynchronous context manager that does not yield any state.
   Used to manage the application lifespan events without maintaining state.
@@ -40,6 +42,8 @@ Scope = MutableMapping[str, Any]
 Message = MutableMapping[str, Any]
 Receive = Callable[[], Awaitable[Message]]
 Send = Callable[[Message], Awaitable[None]]
+
+ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 
 StatelessLifespan = Callable[[AppType], AbstractAsyncContextManager[None]]
 StatefulLifespan = Callable[[AppType], AbstractAsyncContextManager[Mapping[str, Any]]]

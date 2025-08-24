@@ -10,14 +10,14 @@ from koldapi.applications import (
 )
 
 
-class TestApp(KoldAPI):
+class SimpleApp(KoldAPI):
     def setup(self) -> Config:
         return Config()
 
 
 class TestApplication:
     def setup_method(self):
-        self.app = TestApp()
+        self.app = SimpleApp()
 
     @pytest.mark.asyncio
     async def test_lifespan_yield_none(self):
@@ -26,7 +26,7 @@ class TestApplication:
 
     @pytest.mark.asyncio
     async def test_lifespan_yield_state(self):
-        class AppWithState(TestApp):
+        class AppWithState(SimpleApp):
             async def lifespan(self, _):
                 yield {"db": "connected"}
 
@@ -36,7 +36,7 @@ class TestApplication:
 
     @pytest.mark.asyncio
     async def test_lifespan_yield_missing_error(self):
-        class AppWithNotAsyncGeneratorLifespan(TestApp):
+        class AppWithNotAsyncGeneratorLifespan(SimpleApp):
             def lifespan(self, _):
                 yield
 
@@ -47,7 +47,7 @@ class TestApplication:
 
     @pytest.mark.asyncio
     async def test_lifespan_yield_multiple_times_error(self):
-        class AppWIthMultipleLifespanYields(TestApp):
+        class AppWIthMultipleLifespanYields(SimpleApp):
             async def lifespan(self, _):
                 yield
                 yield
@@ -59,7 +59,7 @@ class TestApplication:
 
     @pytest.mark.asyncio
     async def test_lifespan_is_not_async_generator_error(self):
-        class AppWithoutLifespanYield(TestApp):
+        class AppWithoutLifespanYield(SimpleApp):
             async def lifespan(self, _):
                 return
 
@@ -123,9 +123,9 @@ class TestApplication:
         receive = AsyncMock()
         send = AsyncMock()
 
-        self.app.router = AsyncMock()
+        self.app._middleware_stack = AsyncMock()
 
         await self.app(scope, receive, send)
 
         assert scope["app"] is self.app
-        self.app.router.assert_awaited_once()
+        self.app._middleware_stack.assert_awaited_once_with(scope, receive, send)

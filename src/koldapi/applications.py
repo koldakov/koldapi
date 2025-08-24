@@ -7,12 +7,13 @@ from types import AsyncGeneratorType
 from typing import TYPE_CHECKING, Any, Self, TypeVar
 
 from .datastructures import Method, State
+from .middleware import Middleware, MiddlewareBase, ServerErrorMiddleware
 from .routing import BaseRoute, Route, Router
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable
 
-    from ._types import DecoratedCallable, Lifespan, Receive, Scope, Send
+    from ._types import ASGIApp, DecoratedCallable, Lifespan, Receive, Scope, Send
     from .configs import Config
 
 AppType = TypeVar("AppType", bound="KoldAPI")
@@ -39,6 +40,8 @@ class KoldAPI(ABC):
         self.app_config: Config = self.setup()
         self.state: State = State()
         self.router: Router = Router(self.app_config, self._lifespan_context())
+
+        self._middleware_stack: ASGIApp = self._build_middleware_stack()
 
     @property
     def routes(self) -> list[BaseRoute]:
@@ -92,6 +95,44 @@ class KoldAPI(ABC):
             None: If no additional information is needed.
         """
         yield
+
+    def middleware_stack(self) -> list[Middleware]:
+        """
+        Define your custom middleware here.
+
+        Override this method if you want to add application-level
+        middleware. User-defined middleware declared here will be
+        wrapped around the core router.
+
+        Examples:
+            >>> from koldapi.middleware import Middleware, NextMiddleware
+            >>>
+            >>>
+            >>> class LoggingMiddleware(NextMiddleware):
+            >>>    # Simple middleware that logs each incoming request's path and method.
+            >>>    # Automatically calls the next middleware or app after logging.
+            >>>    def __init__(self, app: AppType, /, *, prefix: str = "[LOG]") -> None:
+            >>>        super().__init__(app)
+            >>>        self.prefix = prefix
+            >>>
+            >>>    async def dispatch(self, scope: Scope, receive: Receive, send: Send, /) -> None:
+            >>>        print(f"{self.prefix} Incoming request: {scope['method']} {scope['path']}")
+            >>>        # No need to call self.app here — NextMiddleware will handle it
+            >>>
+            >>>
+            >>> class MyShinyApp(KoldAPI):
+            >>>     def setup(self):
+            >>>         return Config(debug=True)
+            >>>
+            >>>     def middleware_stack(self):
+            >>>         return [
+            >>>             Middleware(LoggingMiddleware, prefix="[LOG]"),
+            >>>         ]
+
+        Returns:
+            list[Middleware]: Middleware applied in the order defined.
+        """
+        return []
 
     def get(
         self,
@@ -212,6 +253,32 @@ class KoldAPI(ABC):
 
         return decorator
 
+    def _build_middleware_stack(self) -> ASGIApp:
+        """
+        Build the complete middleware stack.
+
+        Starts with the core router as the innermost ASGI app,
+        then wraps it with system middleware (e.g., error handlers),
+        followed by user-defined middleware from `middleware_stack()`.
+        Middleware are applied in reverse order so that the first
+        item in the list is the outermost layer.
+
+        Returns:
+            ASGIApp: The final ASGI application with all middleware applied.
+        """
+        app: ASGIApp = self.router
+
+        middleware_list: list[Middleware[MiddlewareBase | Any]] = [
+            Middleware(ServerErrorMiddleware, self.app_config),
+            *self.middleware_stack(),
+        ]
+
+        middleware: Middleware[MiddlewareBase | Any]
+        for middleware in reversed(middleware_list):
+            app = middleware(app)
+
+        return app
+
     def _populate_scope(self, scope: Scope, /) -> None:
         """
         Populate the scope with extra values.
@@ -223,7 +290,7 @@ class KoldAPI(ABC):
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send, /) -> None:
         """
-        Get the request and process it.
+        Get the request and process it through middleware stack.
 
         Args:
             scope: Static request information, such as request type (http, websocket), headers, etc.
@@ -231,4 +298,4 @@ class KoldAPI(ABC):
             send: An awaitable callable used to send events/messages back to the client or server.
         """
         self._populate_scope(scope)
-        await self.router(scope, receive, send)
+        await self._middleware_stack(scope, receive, send)
