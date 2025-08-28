@@ -37,9 +37,9 @@ class LifespanYieldedMultipleTimesError(KoldAPIBaseError):
 
 class KoldAPI(ABC):
     def __init__(self: AppType):
-        self.app_config: Config = self.setup()
+        self.config: Config = self.setup()
         self.state: State = State()
-        self.router: Router = Router(self.app_config, self._lifespan_context())
+        self.router: Router = Router(self.config, self._lifespan_context())
 
         self._middleware_stack: ASGIApp = self._build_middleware_stack()
 
@@ -269,7 +269,7 @@ class KoldAPI(ABC):
         app: ASGIApp = self.router
 
         middleware_list: list[Middleware[MiddlewareBase | Any]] = [
-            Middleware(ServerErrorMiddleware, self.app_config),
+            Middleware(ServerErrorMiddleware, self.config),
             *self.middleware_stack(),
         ]
 
