@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from enum import StrEnum
+from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -12,12 +14,24 @@ if TYPE_CHECKING:
     from koldapi.responses import Response
 
 
+class Match(StrEnum):
+    """
+    Represents the result of a route matching attempt.
+
+    Attributes:
+        NONE: No match — the route's path does not match the incoming request.
+        PARTIAL: Partial match — the route's path matches, but other criteria
+                 (e.g., HTTP method) do not.
+        FULL: Full match — both the route's path and all criteria match the request.
+    """
+
+    NONE = "NONE"
+    PARTIAL = "PARTIAL"
+    FULL = "FULL"
+
+
 class BaseRouteError(Exception):
     """Base Route Error."""
-
-
-class RouteMethodDoesNotMatchError(BaseRouteError):
-    """Route Method Does Not Match Error."""
 
 
 class RouteWithMethodAlreadyDefinedError(BaseRouteError):
@@ -25,6 +39,8 @@ class RouteWithMethodAlreadyDefinedError(BaseRouteError):
 
 
 class BaseRoute(ABC):
+    _param_regex: ClassVar[str] = r"{([a-zA-Z_][a-zA-Z0-9_]*)}"
+
     def __init__(self, path: str, endpoint: Callable, /) -> None:
         """
         Abstract base class representing a route definition.
@@ -38,20 +54,39 @@ class BaseRoute(ABC):
         self.endpoint: Callable[[Request], Response | Awaitable[Response]] = endpoint
 
     @abstractmethod
-    def matches(self, scope: Scope, /) -> bool:
+    def matches(self, scope: Scope, /) -> tuple[Match, Scope]:
         """
-        Returns true if route matches the scope path.
+        Match the give path with the route's path.
 
         Args:
             scope: ASGI server scope.
 
         Returns:
-            True if route matches the scope path and False otherwise.
-
-        Raises:
-            ``koldapi.routing.RouteMethodDoesNotMatchError`` if scope HTTP method does not match
-            with the path HTTP method.
+            Match type and scope.
         """
+
+    def compile_path(self, path: str, /) -> tuple[re.Pattern[str], list[str]]:
+        """
+        Convert a path with path params into a regex pattern.
+
+        Args:
+            path: requested path.
+
+        Example:
+            "/users/{id}" -> ^/users/(?P<id>[^/]+)$
+
+        Returns:
+            Tuple of path pattern and parameter names.
+        """
+        param_names: list[str] = []
+
+        def replace(match: re.Match, /) -> str:
+            name: str = match.group(1)
+            param_names.append(name)
+            return f"(?P<{name}>[^/]+)"
+
+        pattern: str = re.sub(self._param_regex, replace, path)
+        return re.compile(f"^{pattern}$"), param_names
 
     @abstractmethod
     async def __call__(

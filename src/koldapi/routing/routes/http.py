@@ -1,5 +1,6 @@
 import inspect
 from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
 from koldapi._types import Receive, Scope, Send
 from koldapi.configs import Config
@@ -9,16 +10,33 @@ from koldapi.responses import Response
 
 from ._base import (
     BaseRoute,
+    Match,
 )
+
+if TYPE_CHECKING:
+    import re
 
 
 class Route(BaseRoute):
     def __init__(self, path: str, endpoint: Callable, methods: list[Method], /) -> None:
         super().__init__(path, endpoint)
         self.methods: list[Method] = methods
+        self.regex, self.param_names = self.compile_path(path)
 
-    def matches(self, scope: Scope, /) -> bool:
-        raise NotImplementedError()
+    def matches(self, scope: Scope, /) -> tuple[Match, Scope]:
+        match: re.Match[str] | None = self.regex.match(scope["path"])
+        if not match:
+            return Match.NONE, {}
+
+        matched_path_params: dict[str, str] = match.groupdict()
+        path_params: dict[str, str] = scope.get("path_params", {})
+        path_params.update(matched_path_params)
+        scope_: Scope = {"path_params": path_params}
+
+        if scope["method"].upper() in self.methods:
+            return Match.FULL, scope_
+
+        return Match.PARTIAL, scope_
 
     async def _serve_endpoint(self, request: Request, /) -> Response:
         """

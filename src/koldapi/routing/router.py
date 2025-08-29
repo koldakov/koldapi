@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Any
 
 from koldapi._types import Lifespan, Receive, Scope, Send
 from koldapi.configs import Config
-from koldapi.routing.routes import BaseRoute
+from koldapi.routing.routes import BaseRoute, Match
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -114,5 +114,32 @@ class Router:
         if event_type == "lifespan":
             await self._lifespan(scope, receive, send)
             return
+
+        partial_route: BaseRoute | None = None
+        route: BaseRoute
+        for route in self.routes:
+            # Iterate through all routes.
+            # - If a full match is found, dispatch to it immediately.
+            # - If a partial match is found (path matches but method does not), remember it
+            #   and continue searching for a full match.
+            # - If no full match exists, the remembered partial match is used as a fallback.
+            #   It does not matter which route handles the partial match, any matching route
+            #   can be used.
+            # Note: BaseRoute does not handle partial matches; this logic is managed by the router.
+            match: Match
+            child_scope: Scope
+            match, child_scope = route.matches(scope)
+
+            if match == Match.FULL:
+                scope.update(child_scope)
+                await route(self.config, scope, receive, send)
+                return
+
+            elif match == Match.PARTIAL and partial_route is None:
+                partial_route = route
+                partial_scope = child_scope  # noqa: F841
+
+        if partial_route is not None:
+            raise NotImplementedError()
 
         raise NotImplementedError()

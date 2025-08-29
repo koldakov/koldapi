@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from koldapi import Config
-from koldapi.routing import BaseRoute
+from koldapi import Config, Method
+from koldapi.routing import BaseRoute, Route
 from koldapi.routing.router import Router
 
 
@@ -22,6 +22,15 @@ class TestRouter:
         self.send_messages = send
         self.sent_messages = []
         self.receive_calls = 0
+
+        @asynccontextmanager
+        async def lifespan(_):
+            yield
+
+        self.lifespan = lifespan
+
+        self.router = Router(self.config, self.lifespan)
+        self.route = Route("/test", AsyncMock(), [Method.GET])
 
     def test_add_route_should_append_new_route(self):
         @asynccontextmanager
@@ -128,3 +137,27 @@ class TestRouter:
         assert self.sent_messages[0]["type"] == "lifespan.startup.complete"
         assert self.sent_messages[1]["type"] == "lifespan.shutdown.failed"
         assert "CustomError: shutdown fail" in self.sent_messages[1]["message"]
+
+    @pytest.mark.asyncio
+    async def test_full_match_is_called(self):
+        scope = {"type": "http", "path": "/test", "method": "GET"}
+        self.router.add_route(self.route)
+
+        await self.router(scope, self.receive, self.send)
+        self.route.endpoint.assert_awaited_once()  # type: ignore[attr-defined]
+
+    @pytest.mark.asyncio
+    async def test_partial_match_is_called_if_partial(self):
+        scope = {"type": "http", "path": "/test", "method": "POST"}
+        self.router.add_route(self.route)
+
+        with pytest.raises(NotImplementedError):
+            await self.router(scope, self.receive, self.send)
+
+    @pytest.mark.asyncio
+    async def test_none_match_raises(self):
+        scope = {"type": "http", "path": "/other", "method": "GET"}
+        self.router.add_route(self.route)
+
+        with pytest.raises(NotImplementedError):
+            await self.router(scope, self.receive, self.send)
