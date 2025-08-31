@@ -7,7 +7,7 @@ from koldapi.configs import Config
 from koldapi.requests import Request
 from koldapi.responses import Response
 from koldapi.routing import Route
-from koldapi.routing.routes import Match
+from koldapi.routing.routes import InvalidRequestTypeError, Match
 
 
 class TestRoute:
@@ -65,7 +65,7 @@ class TestRoute:
     async def test_call_with_async_endpoint(self):
         response = AsyncMock()
 
-        async def endpoint(_):
+        async def endpoint():
             return response
 
         route = Route("/test", endpoint, [Method.GET])
@@ -78,7 +78,7 @@ class TestRoute:
     async def test_call_with_sync_endpoint(self):
         response = AsyncMock(spec=Response)
 
-        def endpoint(_):
+        def endpoint():
             return response
 
         route = Route("/test", endpoint, [Method.GET])
@@ -89,10 +89,62 @@ class TestRoute:
 
     @pytest.mark.asyncio
     async def test_call_raises_exception(self):
-        async def endpoint(_):
+        async def endpoint():
             raise ValueError()
 
         route = Route("/test", endpoint, [Method.GET])
 
         with pytest.raises(ValueError):
+            await route(self.config, self.scope, self.receive, self.send)
+
+    @pytest.mark.asyncio
+    async def test_call_args_when_request_not_provided(self):
+        service = AsyncMock()
+
+        async def endpoint():
+            await service()
+            return AsyncMock(spec=Response)
+
+        route = Route("/test", endpoint, [Method.GET])
+        await route(self.config, self.scope, self.receive, self.send)
+
+        await service.awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_call_args_when_request_type_not_provided(self):
+        service = AsyncMock()
+
+        async def endpoint(request):
+            await service()
+            return AsyncMock(spec=Response)
+
+        route = Route("/test", endpoint, [Method.GET])
+        await route(self.config, self.scope, self.receive, self.send)
+
+        await service.awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_call_args_when_request_type_provided_and_correct(self):
+        service = AsyncMock()
+
+        async def endpoint(request: Request):
+            await service()
+            return AsyncMock(spec=Response)
+
+        route = Route("/test", endpoint, [Method.GET])
+        await route(self.config, self.scope, self.receive, self.send)
+
+        await service.awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_call_args_when_request_type_provided_and_incorrect(self):
+        service = AsyncMock()
+
+        async def endpoint(request: int):
+            await service()
+            return AsyncMock(spec=Response)
+
+        route = Route("/test", endpoint, [Method.GET])
+
+        with pytest.raises(InvalidRequestTypeError):
             await route(self.config, self.scope, self.receive, self.send)

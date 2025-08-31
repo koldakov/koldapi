@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import re
 from abc import ABC, abstractmethod
 from enum import StrEnum
@@ -38,6 +39,10 @@ class RouteWithMethodAlreadyDefinedError(BaseRouteError):
     """Route With Method Already Defined Error."""
 
 
+class InvalidRequestTypeError(BaseRouteError):
+    """Invalid Request Type Error."""
+
+
 class BaseRoute(ABC):
     _param_regex: ClassVar[str] = r"{([a-zA-Z_][a-zA-Z0-9_]*)}"
 
@@ -52,6 +57,11 @@ class BaseRoute(ABC):
         """
         self.path: str = path
         self.endpoint: Callable[[Request], Response | Awaitable[Response]] = endpoint
+
+        self._endpoint_signature: inspect.Signature = inspect.signature(self.endpoint)
+        self.endpoint_args_dict: dict[str, inspect.Parameter] = {
+            name: param.annotation for name, param in self._endpoint_signature.parameters.items()
+        }
 
     @abstractmethod
     def matches(self, scope: Scope, /) -> tuple[Match, Scope]:

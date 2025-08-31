@@ -1,6 +1,6 @@
 import inspect
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from koldapi._types import Receive, Scope, Send
 from koldapi.configs import Config
@@ -10,6 +10,7 @@ from koldapi.responses import Response
 
 from ._base import (
     BaseRoute,
+    InvalidRequestTypeError,
     Match,
 )
 
@@ -38,6 +39,42 @@ class Route(BaseRoute):
 
         return Match.PARTIAL, scope_
 
+    def __add_request_arg(self, request: Request, args: list[Any], /) -> None:
+        """
+        Add request arg to the endpoint args if needed.
+
+        Args:
+            request: Incoming HTTP request.
+            args: Endpoint args list.
+
+        Raises:
+            InvalidRequestTypeError if provided request type is not correct.
+        """
+        param_type: inspect.Parameter | type[inspect._empty] | None = self.endpoint_args_dict.get("request")
+        if param_type is None:
+            return
+
+        if param_type not in (Request, inspect._empty):
+            raise InvalidRequestTypeError(
+                f"Got unexpected request type {param_type!r}. "
+                "Expected `koldapi.requests.Request` or no type annotation."
+            )
+
+        args.append(request)
+
+    def _build_endpoint_args(self, request: Request, /) -> list[Any]:
+        """
+
+        Args:
+            request: Incoming HTTP request.
+
+        Returns:
+            List of endpoint arguments.
+        """
+        args: list[Any] = []
+        self.__add_request_arg(request, args)
+        return args
+
     async def _serve_endpoint(self, request: Request, /) -> Response:
         """
         Execute the endpoint with the given request and return a Response.
@@ -52,7 +89,7 @@ class Route(BaseRoute):
             Response: The response produced by the endpoint, either directly
                       or by awaiting the endpoint if it is asynchronous.
         """
-        response: Response | Awaitable[Response] = self.endpoint(request)
+        response: Response | Awaitable[Response] = self.endpoint(*self._build_endpoint_args(request))
         if inspect.isawaitable(response):
             return await response
 
