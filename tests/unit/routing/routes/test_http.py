@@ -7,7 +7,7 @@ from koldapi.configs import Config
 from koldapi.requests import Request
 from koldapi.responses import Response
 from koldapi.routing import Route
-from koldapi.routing.routes import InvalidRequestTypeError, Match
+from koldapi.routing.routes import InvalidPathParamsError, InvalidRequestTypeError, Match
 
 
 class TestRoute:
@@ -16,6 +16,12 @@ class TestRoute:
         self.receive = AsyncMock()
         self.send = AsyncMock()
         self.scope = {"type": "http", "path": "/test", "method": "get"}
+        self.scope_with_path_params = {
+            "type": "http",
+            "path": "/users/1",
+            "method": "get",
+            "path_params": {"user_id": "1"},
+        }
         self.request = Request(self.scope, self.receive)
 
     def test_matches_returns_full_match_when_path_contains_parameters(self):
@@ -148,3 +154,50 @@ class TestRoute:
 
         with pytest.raises(InvalidRequestTypeError):
             await route(self.config, self.scope, self.receive, self.send)
+
+    @pytest.mark.asyncio
+    async def test_call_args_with_path_params_without_type(self):
+        async def endpoint(user_id):
+            assert isinstance(user_id, str)
+            return AsyncMock(spec=Response)
+
+        route = Route("/users/{user_id}", endpoint, [Method.GET])
+        await route(self.config, self.scope_with_path_params, self.receive, self.send)
+
+    @pytest.mark.asyncio
+    async def test_call_args_with_path_params_with_type(self):
+        async def endpoint(user_id: int):
+            assert isinstance(user_id, int)
+            return AsyncMock(spec=Response)
+
+        route = Route("/users/{user_id}", endpoint, [Method.GET])
+        await route(self.config, self.scope_with_path_params, self.receive, self.send)
+
+    @pytest.mark.asyncio
+    async def test_call_args_with_path_params_with_wrong_type(self):
+        scope = self.scope_with_path_params.copy()
+        scope["path"] = "/users/user_id"
+        scope["path_params"] = {"user_id": "user_id"}
+
+        async def endpoint(user_id: int):
+            return AsyncMock(spec=Response)
+
+        route = Route("/users/{user_id}", endpoint, [Method.GET])
+
+        with pytest.raises(InvalidPathParamsError):
+            await route(self.config, scope, self.receive, self.send)
+
+    @pytest.mark.asyncio
+    async def test_call_args_with_path_params_when_path_params_provided_and_request_provided(self):
+        scope = self.scope_with_path_params.copy()
+        scope["path"] = "/users/2/user_action"
+        scope["path_params"] = {"user_id": "1", "user_action": "user_action"}
+
+        async def endpoint(request: Request, user_id: int, user_action):
+            assert isinstance(request, Request)
+            assert isinstance(user_id, int)
+            return AsyncMock(spec=Response)
+
+        route = Route("/users/{user_id}/{user_action}", endpoint, [Method.GET])
+
+        await route(self.config, scope, self.receive, self.send)

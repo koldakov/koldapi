@@ -3,15 +3,16 @@ from __future__ import annotations
 import inspect
 import re
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from koldapi._types import Receive, Scope, Send
     from koldapi.configs import Config
-    from koldapi.requests import Request
+    from koldapi.requests import HTTPConnection
     from koldapi.responses import Response
 
 
@@ -43,6 +44,42 @@ class InvalidRequestTypeError(BaseRouteError):
     """Invalid Request Type Error."""
 
 
+@dataclass
+class ParamError:
+    """
+    Represents an error that occurred while trying to convert or validate a parameter
+    passed to an endpoint. This can be used for path parameters, query parameters,
+    or any other dynamically injected arguments.
+
+    Attributes:
+        loc: The location of the parameter, e.g., ["path", "user_id"] or ["query", "page"].
+        msg: Human-readable error message describing what went wrong.
+        type: A string identifying the type of error, e.g., "type_error.int".
+    """
+
+    loc: list[str]
+    msg: str
+    type: str
+
+
+class InvalidPathParamsError(BaseRouteError):
+    """
+    Exception raised when one or more path parameters cannot be converted
+    to the expected type.
+    """
+
+    def __init__(self, errors: list[ParamError]) -> None:
+        """
+        Args:
+            errors: List of ParamError.
+        """
+        self.errors: list[ParamError] = errors
+        super().__init__(self._format_errors())
+
+    def _format_errors(self) -> str:
+        return "; ".join(f"{err.loc}: {err.msg}" for err in self.errors)
+
+
 class BaseRoute(ABC):
     _param_regex: ClassVar[str] = r"{([a-zA-Z_][a-zA-Z0-9_]*)}"
 
@@ -56,12 +93,9 @@ class BaseRoute(ABC):
                 that will be called when the route matches an incoming request.
         """
         self.path: str = path
-        self.endpoint: Callable[[Request], Response | Awaitable[Response]] = endpoint
+        self.endpoint: Callable[..., Response | Awaitable[Response]] = endpoint
 
-        self._endpoint_signature: inspect.Signature = inspect.signature(self.endpoint)
-        self.endpoint_args_dict: dict[str, inspect.Parameter] = {
-            name: param.annotation for name, param in self._endpoint_signature.parameters.items()
-        }
+        self.endpoint_signature: inspect.Signature = inspect.signature(self.endpoint)
 
     @abstractmethod
     def matches(self, scope: Scope, /) -> tuple[Match, Scope]:
@@ -74,6 +108,58 @@ class BaseRoute(ABC):
         Returns:
             Match type and scope.
         """
+
+    def build_endpoint_kwargs(self, connection: HTTPConnection, /) -> dict[str, Any]:
+        """
+        Construct the argument list for an endpoint dynamically.
+
+        Uses the path parameters from the connection scope and respects the type annotations
+        declared by the user in the endpoint signature. Automatically casts each path
+        parameter to the annotated type if provided, allowing endpoints to receive fully
+        typed arguments without manual conversion.
+
+        This method enables flexible, type-safe parameter injection for the endpoints.
+
+        Notes:
+            Here we build named arguments as people can ignore the order of arguments.
+
+        Args:
+            connection: Incoming connection.
+
+        Raises:
+            InvalidPathParamsError: if path parameters can't be cast to the requested type annotation.
+        """
+        path_params: dict[str, str] | None = connection.scope.get("path_params")
+        if not path_params:
+            return {}
+
+        kwargs: dict[str, Any] = {}
+        errors: list[ParamError] = []
+
+        name: str
+        param: inspect.Parameter
+        for name, param in self.endpoint_signature.parameters.items():
+            if name not in path_params:
+                continue
+
+            value = path_params[name]
+            if param.annotation not in (inspect._empty, str):
+                try:
+                    value = param.annotation(value)
+                except Exception:  # noqa: BLE001
+                    errors.append(
+                        ParamError(
+                            loc=["path", name],
+                            msg=f"Can't convert to {param.annotation.__name__}",
+                            type=f"type_error.{param.annotation.__name__}",
+                        )
+                    )
+            kwargs[name] = value
+
+        if errors:
+            raise InvalidPathParamsError(errors)
+
+        return kwargs
 
     def compile_path(self, path: str, /) -> tuple[re.Pattern[str], list[str]]:
         """

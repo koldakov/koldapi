@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 from koldapi._types import Receive, Scope, Send
 from koldapi.configs import Config
 from koldapi.datastructures import Method
-from koldapi.requests import Request
+from koldapi.requests import HTTPConnection, Request
 from koldapi.responses import Response
 
 from ._base import (
@@ -39,41 +39,33 @@ class Route(BaseRoute):
 
         return Match.PARTIAL, scope_
 
-    def __add_request_arg(self, request: Request, args: list[Any], /) -> None:
+    def __add_request_kwarg(self, connection: HTTPConnection, kwargs: dict[str, Any], /) -> None:
         """
-        Add request arg to the endpoint args if needed.
+        Add request kwarg to the endpoint kwargs if needed.
 
         Args:
-            request: Incoming HTTP request.
-            args: Endpoint args list.
+            connection: Incoming HTTP request.
+            kwargs: Endpoint kwargs.
 
         Raises:
-            InvalidRequestTypeError if provided request type is not correct.
+            InvalidRequestTypeError if provided connection type is not correct.
         """
-        param_type: inspect.Parameter | type[inspect._empty] | None = self.endpoint_args_dict.get("request")
-        if param_type is None:
+        param: inspect.Parameter | None = self.endpoint_signature.parameters.get("request")
+        if param is None:
             return
 
-        if param_type not in (Request, inspect._empty):
+        if param.annotation not in (Request, inspect._empty):
             raise InvalidRequestTypeError(
-                f"Got unexpected request type {param_type!r}. "
+                f"Got unexpected request type {param.annotation!r}. "
                 "Expected `koldapi.requests.Request` or no type annotation."
             )
 
-        args.append(request)
+        kwargs.update({"request": connection})
 
-    def _build_endpoint_args(self, request: Request, /) -> list[Any]:
-        """
-
-        Args:
-            request: Incoming HTTP request.
-
-        Returns:
-            List of endpoint arguments.
-        """
-        args: list[Any] = []
-        self.__add_request_arg(request, args)
-        return args
+    def build_endpoint_kwargs(self, connection: HTTPConnection, /) -> dict[str, Any]:
+        kwargs: dict[str, Any] = super().build_endpoint_kwargs(connection)
+        self.__add_request_kwarg(connection, kwargs)
+        return kwargs
 
     async def _serve_endpoint(self, request: Request, /) -> Response:
         """
@@ -89,7 +81,7 @@ class Route(BaseRoute):
             Response: The response produced by the endpoint, either directly
                       or by awaiting the endpoint if it is asynchronous.
         """
-        response: Response | Awaitable[Response] = self.endpoint(*self._build_endpoint_args(request))
+        response: Response | Awaitable[Response] = self.endpoint(**self.build_endpoint_kwargs(request))
         if inspect.isawaitable(response):
             return await response
 
