@@ -7,7 +7,7 @@ from koldapi.requests import Request, WrongHTTPBodyFormatError
 
 class TestRequestBody:
     def setup_method(self):
-        self.scope = {"type": "http", "app": object(), "method": "POST"}
+        self.scope = {"type": "http", "app": object(), "method": "POST", "query_string": b"pk=1&pk=2&type=user"}
 
     @pytest.mark.asyncio
     async def test_body_should_return_when_called_first_time(self):
@@ -36,7 +36,7 @@ class TestRequestBody:
 
 class TestRequestJSON:
     def setup_method(self):
-        self.scope = {"type": "http", "app": object(), "method": "POST"}
+        self.scope = {"type": "http", "app": object(), "method": "POST", "query_string": b"pk=1&pk=2&type=user"}
 
     @pytest.mark.asyncio
     async def test_json_should_return_when_body_is_valid_json(self):

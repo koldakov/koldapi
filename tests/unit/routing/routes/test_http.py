@@ -15,12 +15,13 @@ class TestRoute:
         self.config = Config()
         self.receive = AsyncMock()
         self.send = AsyncMock()
-        self.scope = {"type": "http", "path": "/test", "method": "get"}
+        self.scope = {"type": "http", "path": "/test", "method": "get", "query_string": b"pk=1&pk=2&type=user"}
         self.scope_with_path_params = {
             "type": "http",
             "path": "/users/1",
             "method": "get",
             "path_params": {"user_id": "1"},
+            "query_string": b"pk=1&pk=2&type=user",
         }
         self.request = Request(self.scope, self.receive)
 

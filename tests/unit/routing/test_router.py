@@ -140,7 +140,7 @@ class TestRouter:
 
     @pytest.mark.asyncio
     async def test_full_match_is_called(self):
-        scope = {"type": "http", "path": "/test", "method": "GET"}
+        scope = {"type": "http", "path": "/test", "method": "GET", "query_string": b"pk=1&pk=2&type=user"}
         self.router.add_route(self.route)
 
         await self.router(scope, self.receive, self.send)
@@ -148,7 +148,7 @@ class TestRouter:
 
     @pytest.mark.asyncio
     async def test_partial_match_is_called_if_partial(self):
-        scope = {"type": "http", "path": "/test", "method": "POST"}
+        scope = {"type": "http", "path": "/test", "method": "POST", "query_string": b"pk=1&pk=2&type=user"}
         self.router.add_route(self.route)
 
         with pytest.raises(NotImplementedError):
@@ -156,7 +156,7 @@ class TestRouter:
 
     @pytest.mark.asyncio
     async def test_none_match_raises(self):
-        scope = {"type": "http", "path": "/other", "method": "GET"}
+        scope = {"type": "http", "path": "/other", "method": "GET", "query_string": b"pk=1&pk=2&type=user"}
         self.router.add_route(self.route)
 
         with pytest.raises(NotImplementedError):

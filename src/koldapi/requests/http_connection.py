@@ -2,7 +2,7 @@ from collections.abc import Iterator, Mapping
 from typing import Any, ClassVar
 
 from koldapi._types import Receive, Scope
-from koldapi.datastructures import Headers, Method
+from koldapi.datastructures import Headers, Method, QueryParams
 
 
 class BaseHTTPConnection(Exception):
@@ -51,6 +51,7 @@ class HTTPConnection(Mapping[str, Any]):
         self._validate_connection()
 
         self._headers: Headers = Headers.from_scope(scope)
+        self._query_params: QueryParams = QueryParams.from_scope(scope)
 
     def _validate_connection(self) -> None:
         """
@@ -115,6 +116,10 @@ class HTTPConnection(Mapping[str, Any]):
             The ASGI scope.
         """
         return self._scope
+
+    @property
+    def query_params(self) -> QueryParams:
+        return self._query_params
 
     def receive(self) -> Receive:
         """
