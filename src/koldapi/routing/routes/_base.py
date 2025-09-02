@@ -95,6 +95,7 @@ class BaseRoute(ABC):
         self.path: str = path
         self.endpoint: Callable[..., Response | Awaitable[Response]] = endpoint
 
+        self.regex, self.param_names = self.compile_path(path)
         self.endpoint_signature: inspect.Signature = inspect.signature(self.endpoint)
 
     @abstractmethod

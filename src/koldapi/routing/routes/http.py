@@ -22,7 +22,6 @@ class Route(BaseRoute):
     def __init__(self, path: str, endpoint: Callable, methods: list[Method], /) -> None:
         super().__init__(path, endpoint)
         self.methods: list[Method] = methods
-        self.regex, self.param_names = self.compile_path(path)
 
     def matches(self, scope: Scope, /) -> tuple[Match, Scope]:
         match: re.Match[str] | None = self.regex.match(scope["path"])
